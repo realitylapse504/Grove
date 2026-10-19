@@ -48,7 +48,7 @@
             const [isRecurring, setIsRecurring] = React.useState(false);
             const [recurringFreq, setRecurringFreq] = React.useState('monthly');
 
-            // Shared State Tree
+            // Shared State Tree (Clean Default States)
             const [transactions, setTransactions] = React.useState([]);
             const [goals, setGoals] = React.useState([]);
             const [budgets, setBudgets] = React.useState({
@@ -57,24 +57,26 @@
             const [incomes, setIncomes] = React.useState([]);
             const [syncStatus, setSyncStatus] = React.useState('Syncing...');
 
-                        // Realtime Sync Listener
+            // Realtime Sync Listener (Firebase Absolute Source of Truth)
             React.useEffect(() => {
                 VAULT_REF.on('value', (snapshot) => {
                     const data = snapshot.val();
                     if (data) {
-                        if (data.transactions) setTransactions(Object.values(data.transactions));
-                        // This line explicitly forces it to read whatever is in Firebase, even if it's empty
+                        setTransactions(data.transactions ? Object.values(data.transactions) : []);
                         setGoals(data.goals ? Object.values(data.goals) : []);
-                        if (data.budgets) setBudgets(data.budgets);
-                        if (data.incomes) setIncomes(Object.values(data.incomes));
+                        setBudgets(data.budgets || { groceries: 500, transport: 200, bills: 1200, subs: 100, misc: 150 });
+                        setIncomes(data.incomes ? Object.values(data.incomes) : []);
                     } else {
+                        setTransactions([]);
                         setGoals([]);
+                        setIncomes([]);
                     }
                     setSyncStatus('Connected 🌱');
                 }, (error) => {
                     setSyncStatus('Sync Error ⚠️');
                 });
             }, []);
+
             const syncToCloud = (path, data) => {
                 db.ref(`grove_vault_1102/${path}`).set(data);
             };
@@ -146,7 +148,6 @@
                 return acc;
             }, {});
 
-            const totalBudgetLimit = Object.values(budgets).reduce((a, b) => a + b, 0);
             const safeToSpend = totalIncome - totalSpent;
 
             return (
@@ -157,7 +158,7 @@
                         <div className="flex justify-between items-center mb-3">
                             <div className="flex items-center space-x-2">
                                 <span className="text-2xl">🌱</span>
-                                <h1 className="text-xl font-bold tracking-tight text-[#e2ede3]">GROVE</h1>
+                                <h1 className="text-xl font-bold tracking-tight text-[#e2ede3]">GROVE V2</h1>
                             </div>
                             <span className="text-xs px-2.5 py-1 rounded-full bg-[#1e3827] text-[#9ab89d] border border-[#2c4e38]">
                                 {syncStatus}
@@ -257,7 +258,6 @@
                                                 onClick={() => handleLogExpense(cat.id)}
                                                 className="bg-[#183021] border border-[#284a34] hover:border-[#427050] p-3 rounded-2xl flex flex-col items-center text-center relative overflow-hidden transition active:scale-95 group">
                                                 
-                                                {/* Progress bar background fill */}
                                                 <div 
                                                     className="absolute bottom-0 left-0 right-0 bg-[#2b4f37]/40 transition-all"
                                                     style={{ height: `${pct}%`, zIndex: 0 }}
@@ -354,7 +354,7 @@
                             </div>
                         )}
 
-                                                {/* TAB 3: GOALS */}
+                        {/* TAB 3: GOALS (Fully Dynamic & Persistent) */}
                         {tab === 'goals' && (
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
@@ -452,7 +452,6 @@
                                 </div>
                             </div>
                         )}
-
 
                     </main>
 
