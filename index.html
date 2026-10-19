@@ -24,7 +24,7 @@
     <script type="text/babel">
         // Firebase Config Connection
         const firebaseConfig = {
-            databaseURL: "https://grove-68e31-default-rtdb.firebasedatabase.app/"
+            databaseURL: "https://grove-68e31-default-rtdb.firebaseio.com/"
         };
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
@@ -41,14 +41,13 @@
         ];
 
         function App() {
-            const [tab, setTab] = React.useState('keypad'); // keypad, calendar, goals
+            const [tab, setTab] = React.useState('keypad');
             const [amount, setAmount] = React.useState('0');
             const [who, setWho] = React.useState('Marquis');
             const [selectedCategory, setSelectedCategory] = React.useState('groceries');
             const [isRecurring, setIsRecurring] = React.useState(false);
             const [recurringFreq, setRecurringFreq] = React.useState('monthly');
 
-            // Shared State Tree (Clean Default States)
             const [transactions, setTransactions] = React.useState([]);
             const [goals, setGoals] = React.useState([]);
             const [budgets, setBudgets] = React.useState({
@@ -57,7 +56,7 @@
             const [incomes, setIncomes] = React.useState([]);
             const [syncStatus, setSyncStatus] = React.useState('Syncing...');
 
-            // Realtime Sync Listener (Firebase Absolute Source of Truth)
+            // Realtime Sync Listener
             React.useEffect(() => {
                 VAULT_REF.on('value', (snapshot) => {
                     const data = snapshot.val();
@@ -81,7 +80,6 @@
                 db.ref(`grove_vault_1102/${path}`).set(data);
             };
 
-            // Keypad Logic
             const handleNumPad = (val) => {
                 if (val === 'C') {
                     setAmount('0');
@@ -135,14 +133,12 @@
                 setIsRecurring(false);
             };
 
-            // Math calculations
             const totalSpent = transactions.filter(t => t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
             const totalIncome = incomes.filter(i => i.status === 'completed').reduce((acc, i) => acc + i.amount, 0);
             const marquisPaid = transactions.filter(t => t.who === 'Marquis' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
             const malikaPaid = transactions.filter(t => t.who === 'Malika' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
             const pendingItems = [...transactions, ...incomes].filter(i => i.status === 'pending');
 
-            // Category spending totals
             const catTotals = CATEGORIES.reduce((acc, cat) => {
                 acc[cat.id] = transactions.filter(t => t.category === cat.id && t.status === 'completed').reduce((sum, t) => sum + t.amount, 0);
                 return acc;
@@ -158,7 +154,7 @@
                         <div className="flex justify-between items-center mb-3">
                             <div className="flex items-center space-x-2">
                                 <span className="text-2xl">🌱</span>
-                                <h1 className="text-xl font-bold tracking-tight text-[#e2ede3]">GROVE V2</h1>
+                                <h1 className="text-xl font-bold tracking-tight text-[#e2ede3]">GROVE</h1>
                             </div>
                             <span className="text-xs px-2.5 py-1 rounded-full bg-[#1e3827] text-[#9ab89d] border border-[#2c4e38]">
                                 {syncStatus}
@@ -185,7 +181,6 @@
                             </div>
                         </div>
 
-                        {/* Pending Banner Alert */}
                         {pendingItems.length > 0 && (
                             <div className="mt-3 bg-[#c4824d]/20 border border-[#c4824d]/40 rounded-xl p-2.5 flex justify-between items-center text-xs text-[#e8c3a9]">
                                 <span>🔔 {pendingItems.length} recurring item(s) pending review</span>
@@ -200,8 +195,6 @@
                         {/* TAB 1: KEYPAD */}
                         {tab === 'keypad' && (
                             <div className="space-y-4">
-                                
-                                {/* Who Paid & Recurring Switcher */}
                                 <div className="flex bg-[#1a3323] p-1 rounded-xl border border-[#2a4d36] text-sm">
                                     <button 
                                         onClick={() => setWho('Marquis')} 
@@ -237,7 +230,6 @@
                                     )}
                                 </div>
 
-                                {/* Amount Display */}
                                 <div className="bg-[#172e20] border border-[#294c35] rounded-2xl p-4 text-center">
                                     <span className="text-xs text-[#7c9e7e] uppercase tracking-widest block mb-1">Entry Amount</span>
                                     <div className="text-4xl font-extrabold text-[#e2ede3] tracking-tight">
@@ -245,7 +237,6 @@
                                     </div>
                                 </div>
 
-                                {/* Category Grid Rings (2x3) */}
                                 <div className="grid grid-cols-3 gap-2.5">
                                     {CATEGORIES.map(cat => {
                                         const spent = catTotals[cat.id] || 0;
@@ -257,12 +248,10 @@
                                                 key={cat.id}
                                                 onClick={() => handleLogExpense(cat.id)}
                                                 className="bg-[#183021] border border-[#284a34] hover:border-[#427050] p-3 rounded-2xl flex flex-col items-center text-center relative overflow-hidden transition active:scale-95 group">
-                                                
                                                 <div 
                                                     className="absolute bottom-0 left-0 right-0 bg-[#2b4f37]/40 transition-all"
                                                     style={{ height: `${pct}%`, zIndex: 0 }}
                                                 />
-                                                
                                                 <span className="text-xl mb-1 relative z-10">{cat.icon}</span>
                                                 <span className="text-xs font-semibold text-[#d4ded5] relative z-10">{cat.name}</span>
                                                 <span className="text-[10px] text-[#8ca88e] relative z-10 mt-0.5">${spent.toFixed(0)} /${limit}</span>
@@ -270,7 +259,6 @@
                                         );
                                     })}
 
-                                    {/* 6th Slot: Income / Payday */}
                                     <button
                                         onClick={handleLogIncome}
                                         className="bg-[#1e3c29] border border-[#376145] hover:bg-[#254b33] p-3 rounded-2xl flex flex-col items-center text-center transition active:scale-95">
@@ -280,7 +268,6 @@
                                     </button>
                                 </div>
 
-                                {/* Built-In Cash App Keypad */}
                                 <div className="grid grid-cols-3 gap-2 pt-2">
                                     {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'DEL'].map((btn) => (
                                         <button
@@ -291,17 +278,14 @@
                                         </button>
                                     ))}
                                 </div>
-
                             </div>
                         )}
 
-                        {/* TAB 2: CALENDAR & HISTORY */}
+                        {/* TAB 2: CALENDAR */}
                         {tab === 'calendar' && (
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
-                                    <h2 className="text-sm font-semibold text-[#a3c9a8] mb-3 flex items-center justify-between">
-                                        <span>📅 Cash Flow & Pending Schedule</span>
-                                    </h2>
+                                    <h2 className="text-sm font-semibold text-[#a3c9a8] mb-3">📅 Cash Flow & Pending Schedule</h2>
                                     
                                     {pendingItems.length > 0 ? (
                                         <div className="space-y-2 mb-4">
@@ -354,13 +338,12 @@
                             </div>
                         )}
 
-                        {/* TAB 3: GOALS (Fully Dynamic & Persistent) */}
+                        {/* TAB 3: GOALS */}
                         {tab === 'goals' && (
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
                                     <h2 className="text-sm font-semibold text-[#a3c9a8] mb-3">🪴 Greenhouse Savings Goals</h2>
                                     
-                                    {/* Add New Goal Form */}
                                     <div className="bg-[#152a1d] border border-[#254631] p-3 rounded-xl mb-4 space-y-2">
                                         <p className="text-xs text-[#8ca88e] font-medium">Create New Goal</p>
                                         <input 
@@ -403,14 +386,11 @@
                                         </button>
                                     </div>
 
-                                    {/* Goals List */}
                                     <div className="space-y-3">
                                         {goals.length > 0 ? goals.map(goal => {
                                             const pct = Math.min(Math.round((goal.current / goal.target) * 100), 100);
                                             return (
                                                 <div key={goal.id} className="bg-[#152a1d] border border-[#254631] p-3.5 rounded-xl relative">
-                                                    
-                                                    {/* Delete Goal Button */}
                                                     <button 
                                                         onClick={() => {
                                                             const updated = goals.filter(g => g.id !== goal.id);
@@ -426,7 +406,6 @@
                                                         <span className="text-[#a3c9a8]">${goal.current} /${goal.target}</span>
                                                     </div>
                                                     
-                                                    {/* Botanical Progress Bar */}
                                                     <div className="w-full bg-[#1b3324] h-2.5 rounded-full overflow-hidden mb-3 border border-[#2a4d36]">
                                                         <div className="bg-[#5b8266] h-full transition-all" style={{ width: `${pct}%` }} />
                                                     </div>
