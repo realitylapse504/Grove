@@ -15,7 +15,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0d1b12; color: #f4f6f4; -webkit-tap-highlight-color: transparent; }
-        input, button { touch-action: manipulation; }
+        input, button, select { touch-action: manipulation; }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8) sepia(0.3) saturate(0.8) hue-rotate(70deg); cursor: pointer; }
     </style>
 </head>
 <body class="bg-[#0d1b12] text-[#f4f6f4] min-h-screen flex flex-col antialiased selection:bg-[#2d4a35]">
@@ -32,6 +33,14 @@
         const db = firebase.database();
         const VAULT_REF = db.ref('grove_vault_1102');
 
+        const DEFAULT_BUDGETS = {
+            groceries: 500,
+            transport: 200,
+            bills: 1200,
+            subs: 100,
+            misc: 150
+        };
+
         const CATEGORIES = [
             { id: 'groceries', name: 'Groceries', color: '#82a36b', icon: '🍃' },
             { id: 'transport', name: 'Transportation', color: '#5b8266', icon: '🌿' },
@@ -40,19 +49,44 @@
             { id: 'misc', name: 'Misc', color: '#7a8c79', icon: '🪴' }
         ];
 
+        // Date Helpers (Prevents timezone off-by-one bugs)
+        const getTodayInput = () => {
+            const d = new Date();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const toInputDate = (dateStr) => {
+            if (!dateStr) return getTodayInput();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+            const d = new Date(dateStr);
+            if (isNaN(d)) return getTodayInput();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const toSafeISO = (ymdStr) => {
+            if (!ymdStr) return new Date().toISOString();
+            return new Date(`${ymdStr}T12:00:00`).toISOString();
+        };
+
         function App() {
             const [tab, setTab] = React.useState('keypad');
             const [amount, setAmount] = React.useState('0');
             const [who, setWho] = React.useState('Marquis');
-            const [selectedCategory, setSelectedCategory] = React.useState('groceries');
+            const [entryDate, setEntryDate] = React.useState(getTodayInput());
             const [isRecurring, setIsRecurring] = React.useState(false);
             const [recurringFreq, setRecurringFreq] = React.useState('monthly');
 
             const [transactions, setTransactions] = React.useState([]);
             const [goals, setGoals] = React.useState([]);
-            const [budgets, setBudgets] = React.useState({
-                groceries: 500, transport: 200, bills: 1200, subs: 100, misc: 150
-            });
+            const [budgets, setBudgets] = React.useState(DEFAULT_BUDGETS);
+            const [isEditingBudgets, setIsEditingBudgets] = React.useState(false);
+            const [tempBudgets, setTempBudgets] = React.useState(DEFAULT_BUDGETS);
             const [incomes, setIncomes] = React.useState([]);
             const [syncStatus, setSyncStatus] = React.useState('Syncing...');
 
@@ -63,11 +97,14 @@
                     if (data) {
                         setTransactions(data.transactions ? Object.values(data.transactions) : []);
                         setGoals(data.goals ? Object.values(data.goals) : []);
-                        setBudgets(data.budgets || { groceries: 500, transport: 200, bills: 1200, subs: 100, misc: 150 });
+                        const loadedBudgets = { ...DEFAULT_BUDGETS, ...(data.budgets || {}) };
+                        setBudgets(loadedBudgets);
+                        setTempBudgets(loadedBudgets);
                         setIncomes(data.incomes ? Object.values(data.incomes) : []);
                     } else {
                         setTransactions([]);
                         setGoals([]);
+                        setBudgets(DEFAULT_BUDGETS);
                         setIncomes([]);
                     }
                     setSyncStatus('Connected 🌱');
@@ -99,7 +136,7 @@
                     amount: num,
                     category: catId,
                     who,
-                    date: new Date().toISOString(),
+                    date: toSafeISO(entryDate),
                     isRecurring,
                     recurringFreq: isRecurring ? recurringFreq : null,
                     status: isRecurring ? 'pending' : 'completed'
@@ -110,6 +147,7 @@
                 syncToCloud('transactions', updated);
                 setAmount('0');
                 setIsRecurring(false);
+                setEntryDate(getTodayInput());
             };
 
             const handleLogIncome = () => {
@@ -120,7 +158,7 @@
                     id: Date.now(),
                     amount: num,
                     who,
-                    date: new Date().toISOString(),
+                    date: toSafeISO(entryDate),
                     isRecurring,
                     recurringFreq: isRecurring ? recurringFreq : null,
                     status: isRecurring ? 'pending' : 'completed'
@@ -131,13 +169,50 @@
                 syncToCloud('incomes', updated);
                 setAmount('0');
                 setIsRecurring(false);
+                setEntryDate(getTodayInput());
+            };
+
+            // Save Custom Budget Limits
+            const handleSaveBudgets = () => {
+                const cleaned = {};
+                CATEGORIES.forEach(cat => {
+                    const parsed = parseFloat(tempBudgets[cat.id]);
+                    cleaned[cat.id] = (!isNaN(parsed) && parsed >= 0) ? parsed : DEFAULT_BUDGETS[cat.id];
+                });
+                setBudgets(cleaned);
+                syncToCloud('budgets', cleaned);
+                setIsEditingBudgets(false);
+            };
+
+            // Edit Date of Any Existing Expense or Income
+            const handleUpdateItemDate = (id, newYmd, isIncomeItem = false) => {
+                if (!newYmd) return;
+                const updatedISO = toSafeISO(newYmd);
+                if (isIncomeItem) {
+                    const updated = incomes.map(inc => inc.id === id ? { ...inc, date: updatedISO } : inc);
+                    setIncomes(updated);
+                    syncToCloud('incomes', updated);
+                } else {
+                    const updated = transactions.map(tx => tx.id === id ? { ...tx, date: updatedISO } : tx);
+                    setTransactions(updated);
+                    syncToCloud('transactions', updated);
+                }
             };
 
             const totalSpent = transactions.filter(t => t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
             const totalIncome = incomes.filter(i => i.status === 'completed').reduce((acc, i) => acc + i.amount, 0);
             const marquisPaid = transactions.filter(t => t.who === 'Marquis' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
             const malikaPaid = transactions.filter(t => t.who === 'Malika' && t.status === 'completed').reduce((acc, t) => acc + t.amount, 0);
-            const pendingItems = [...transactions, ...incomes].filter(i => i.status === 'pending');
+            
+            const pendingItems = [
+                ...transactions.filter(t => t.status === 'pending').map(t => ({ ...t, isIncome: false })),
+                ...incomes.filter(i => i.status === 'pending').map(i => ({ ...i, isIncome: true }))
+            ].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const completedHistory = [
+                ...transactions.filter(t => t.status === 'completed').map(t => ({ ...t, isIncome: false })),
+                ...incomes.filter(i => i.status === 'completed').map(i => ({ ...i, isIncome: true }))
+            ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
             const catTotals = CATEGORIES.reduce((acc, cat) => {
                 acc[cat.id] = transactions.filter(t => t.category === cat.id && t.status === 'completed').reduce((sum, t) => sum + t.amount, 0);
@@ -194,7 +269,7 @@
                         
                         {/* TAB 1: KEYPAD */}
                         {tab === 'keypad' && (
-                            <div className="space-y-4">
+                            <div className="space-y-3.5">
                                 <div className="flex bg-[#1a3323] p-1 rounded-xl border border-[#2a4d36] text-sm">
                                     <button 
                                         onClick={() => setWho('Marquis')} 
@@ -208,26 +283,38 @@
                                     </button>
                                 </div>
 
-                                <div className="flex items-center justify-between px-2 text-xs text-[#8ca88e]">
-                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                {/* Date Selector & Recurring Controls */}
+                                <div className="bg-[#162b1e] border border-[#254631] rounded-xl p-2.5 space-y-2 text-xs text-[#8ca88e]">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-medium text-[#a3c9a8]">📅 Transaction Date:</span>
                                         <input 
-                                            type="checkbox" 
-                                            checked={isRecurring} 
-                                            onChange={(e) => setIsRecurring(e.target.checked)}
-                                            className="rounded accent-[#5b8266]"
+                                            type="date" 
+                                            value={entryDate}
+                                            onChange={(e) => setEntryDate(e.target.value)}
+                                            className="bg-[#1b3324] text-[#e2ede3] border border-[#2f543c] rounded-lg px-2.5 py-1 text-xs outline-none focus:border-[#5b8266]"
                                         />
-                                        <span>Mark as Recurring</span>
-                                    </label>
-                                    {isRecurring && (
-                                        <select 
-                                            value={recurringFreq} 
-                                            onChange={(e) => setRecurringFreq(e.target.value)}
-                                            className="bg-[#1b3324] text-[#e2ede3] border border-[#2f543c] rounded px-2 py-1 text-xs">
-                                            <option value="monthly">Monthly</option>
-                                            <option value="biweekly">Bi-Weekly</option>
-                                            <option value="weekly">Weekly</option>
-                                        </select>
-                                    )}
+                                    </div>
+                                    <div className="flex items-center justify-between pt-1.5 border-t border-[#213d2b]">
+                                        <label className="flex items-center space-x-2 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isRecurring} 
+                                                onChange={(e) => setIsRecurring(e.target.checked)}
+                                                className="rounded accent-[#5b8266]"
+                                            />
+                                            <span>Mark as Recurring</span>
+                                        </label>
+                                        {isRecurring && (
+                                            <select 
+                                                value={recurringFreq} 
+                                                onChange={(e) => setRecurringFreq(e.target.value)}
+                                                className="bg-[#1b3324] text-[#e2ede3] border border-[#2f543c] rounded-lg px-2 py-1 text-xs outline-none">
+                                                <option value="monthly">Monthly</option>
+                                                <option value="biweekly">Bi-Weekly</option>
+                                                <option value="weekly">Weekly</option>
+                                            </select>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="bg-[#172e20] border border-[#294c35] rounded-2xl p-4 text-center">
@@ -236,6 +323,44 @@
                                         ${amount}
                                     </div>
                                 </div>
+
+                                {/* Category Header & Budget Limit Editor Toggle */}
+                                <div className="flex justify-between items-center px-1">
+                                    <span className="text-[11px] font-semibold text-[#8ca88e] uppercase tracking-wider">Tap Category to Log</span>
+                                    <button 
+                                        onClick={() => {
+                                            setTempBudgets(budgets);
+                                            setIsEditingBudgets(!isEditingBudgets);
+                                        }}
+                                        className="text-xs text-[#a3c9a8] bg-[#183021] border border-[#284a34] px-2.5 py-1 rounded-lg hover:bg-[#254631] transition font-medium">
+                                        {isEditingBudgets ? '✕ Cancel' : '⚙️ Edit Limits'}
+                                    </button>
+                                </div>
+
+                                {/* Collapsible Budget Limits Editor Drawer */}
+                                {isEditingBudgets && (
+                                    <div className="bg-[#152a1d] border border-[#31573f] rounded-2xl p-3.5 space-y-2.5 shadow-lg">
+                                        <p className="text-xs font-semibold text-[#a3c9a8]">Monthly Category Budget Limits ($)</p>
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            {CATEGORIES.map(cat => (
+                                                <div key={cat.id} className="bg-[#1b3324] p-2 rounded-xl border border-[#2a4d36]">
+                                                    <label className="text-[11px] text-[#8ca88e] block mb-1">{cat.icon} {cat.name}</label>
+                                                    <input 
+                                                        type="number"
+                                                        value={tempBudgets[cat.id]}
+                                                        onChange={(e) => setTempBudgets({ ...tempBudgets, [cat.id]: e.target.value })}
+                                                        className="w-full bg-[#122218] text-[#e2ede3] border border-[#2f543c] rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:border-[#5b8266]"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button 
+                                            onClick={handleSaveBudgets}
+                                            className="w-full bg-[#31573f] hover:bg-[#427050] text-white py-2 rounded-xl text-xs font-semibold transition">
+                                            ✓ Save Budget Limits
+                                        </button>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-3 gap-2.5">
                                     {CATEGORIES.map(cat => {
@@ -268,7 +393,7 @@
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2 pt-2">
+                                <div className="grid grid-cols-3 gap-2 pt-1">
                                     {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'DEL'].map((btn) => (
                                         <button
                                             key={btn}
@@ -285,26 +410,62 @@
                         {tab === 'calendar' && (
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
-                                    <h2 className="text-sm font-semibold text-[#a3c9a8] mb-3">📅 Cash Flow & Pending Schedule</h2>
+                                    <h2 className="text-sm font-semibold text-[#a3c9a8] mb-1">📅 Cash Flow & Pending Schedule</h2>
+                                    <p className="text-[11px] text-[#7c9e7e] mb-3">Tap any item's date box to change when it happened or when it's due.</p>
                                     
                                     {pendingItems.length > 0 ? (
-                                        <div className="space-y-2 mb-4">
-                                            <p className="text-xs text-[#8ca88e]">Tap to confirm pending items:</p>
+                                        <div className="space-y-2 mb-5">
+                                            <p className="text-xs text-[#8ca88e] font-medium">Pending Recurring Items:</p>
                                             {pendingItems.map(item => (
                                                 <div key={item.id} className="bg-[#1f3c29] p-3 rounded-xl border border-[#355c42] flex justify-between items-center text-xs">
-                                                    <div>
-                                                        <p className="font-bold text-[#e2ede3]">${item.amount} ({item.who})</p>
-                                                        <p className="text-[10px] text-[#9ab89d]">{new Date(item.date).toLocaleDateString()}</p>
+                                                    <div className="space-y-1">
+                                                        <p className="font-bold text-[#e2ede3]">
+                                                            {item.isIncome ? '💰 Income' : item.category?.toUpperCase()} — ${item.amount.toFixed(2)} ({item.who})
+                                                        </p>
+                                                        <div className="flex items-center space-x-2">
+                                                            <input 
+                                                                type="date"
+                                                                value={toInputDate(item.date)}
+                                                                onChange={(e) => handleUpdateItemDate(item.id, e.target.value, item.isIncome)}
+                                                                className="bg-[#152a1d] text-[#a3c9a8] border border-[#2f543c] rounded px-2 py-0.5 text-[11px] outline-none"
+                                                            />
+                                                            {item.recurringFreq && (
+                                                                <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-[#284a34] text-[#9ab89d]">
+                                                                    {item.recurringFreq}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => {
-                                                            const updated = transactions.map(t => t.id === item.id ? {...t, status: 'completed'} : t);
-                                                            setTransactions(updated);
-                                                            syncToCloud('transactions', updated);
-                                                        }}
-                                                        className="bg-[#427050] hover:bg-[#528763] text-white px-3 py-1.5 rounded-lg font-semibold">
-                                                        Confirm Paid
-                                                    </button>
+                                                    <div className="flex items-center space-x-2">
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (item.isIncome) {
+                                                                    const updated = incomes.map(i => i.id === item.id ? {...i, status: 'completed'} : i);
+                                                                    setIncomes(updated);
+                                                                    syncToCloud('incomes', updated);
+                                                                } else {
+                                                                    const updated = transactions.map(t => t.id === item.id ? {...t, status: 'completed'} : t);
+                                                                    setTransactions(updated);
+                                                                    syncToCloud('transactions', updated);
+                                                                }
+                                                            }}
+                                                            className="bg-[#427050] hover:bg-[#528763] text-white px-3 py-1.5 rounded-lg font-semibold">
+                                                            Confirm
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (item.isIncome) {
+                                                                    const updated = incomes.filter(x => x.id !== item.id);
+                                                                    setIncomes(updated);
+                                                                    syncToCloud('incomes', updated);
+                                                                } else {
+                                                                    const updated = transactions.filter(x => x.id !== item.id);
+                                                                    setTransactions(updated);
+                                                                    syncToCloud('transactions', updated);
+                                                                }
+                                                            }}
+                                                            className="text-rose-400 hover:text-rose-300 px-1 font-bold">✕</button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -313,26 +474,50 @@
                                     )}
 
                                     <h3 className="text-xs font-semibold text-[#8ca88e] uppercase tracking-wider mb-2">Recent Log History</h3>
-                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                                        {transactions.map(t => (
-                                            <div key={t.id} className="bg-[#152a1d] p-2.5 rounded-xl border border-[#223e2c] flex justify-between items-center text-xs">
-                                                <div>
-                                                    <span className="font-bold text-[#e2ede3] uppercase tracking-wide">{t.category}</span>
-                                                    <span className="text-[#8ca88e] ml-2">({t.who})</span>
-                                                    <p className="text-[10px] text-[#6b8c6e]">{new Date(t.date).toLocaleDateString()}</p>
+                                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                                        {completedHistory.length > 0 ? completedHistory.map(item => (
+                                            <div key={item.id} className="bg-[#152a1d] p-2.5 rounded-xl border border-[#223e2c] flex justify-between items-center text-xs">
+                                                <div className="space-y-1">
+                                                    <div>
+                                                        <span className="font-bold text-[#e2ede3] uppercase tracking-wide">
+                                                            {item.isIncome ? '💰 INCOME' : item.category}
+                                                        </span>
+                                                        <span className="text-[#8ca88e] ml-2">({item.who})</span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-2">
+                                                        <input 
+                                                            type="date"
+                                                            value={toInputDate(item.date)}
+                                                            onChange={(e) => handleUpdateItemDate(item.id, e.target.value, item.isIncome)}
+                                                            className="bg-[#1b3324] text-[#9ab89d] border border-[#2a4d36] rounded px-2 py-0.5 text-[11px] outline-none focus:border-[#5b8266]"
+                                                        />
+                                                        {item.isRecurring && (
+                                                            <span className="text-[10px] text-[#7c9e7e]">🔄 {item.recurringFreq}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center space-x-3">
-                                                    <span className="font-bold text-[#a3c9a8]">${t.amount.toFixed(2)}</span>
+                                                    <span className={`font-bold ${item.isIncome ? 'text-emerald-300' : 'text-[#a3c9a8]'}`}>
+                                                        {item.isIncome ? '+' : '-'}${item.amount.toFixed(2)}
+                                                    </span>
                                                     <button 
                                                         onClick={() => {
-                                                            const updated = transactions.filter(x => x.id !== t.id);
-                                                            setTransactions(updated);
-                                                            syncToCloud('transactions', updated);
+                                                            if (item.isIncome) {
+                                                                const updated = incomes.filter(x => x.id !== item.id);
+                                                                setIncomes(updated);
+                                                                syncToCloud('incomes', updated);
+                                                            } else {
+                                                                const updated = transactions.filter(x => x.id !== item.id);
+                                                                setTransactions(updated);
+                                                                syncToCloud('transactions', updated);
+                                                            }
                                                         }}
-                                                        className="text-rose-400 hover:text-rose-300 text-xs">✕</button>
+                                                        className="text-rose-400 hover:text-rose-300 text-xs font-bold px-1">✕</button>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )) : (
+                                            <p className="text-xs text-[#7c9e7e] italic text-center py-3">No activity logged yet.</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
