@@ -355,18 +355,74 @@
                             </div>
                         )}
 
-                        {/* TAB 3: GOALS */}
+                                                {/* TAB 3: GOALS */}
                         {tab === 'goals' && (
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
                                     <h2 className="text-sm font-semibold text-[#a3c9a8] mb-3">🪴 Greenhouse Savings Goals</h2>
                                     
+                                    {/* Add New Goal Form */}
+                                    <div className="bg-[#152a1d] border border-[#254631] p-3 rounded-xl mb-4 space-y-2">
+                                        <p className="text-xs text-[#8ca88e] font-medium">Create New Goal</p>
+                                        <input 
+                                            type="text" 
+                                            id="newGoalName" 
+                                            placeholder="Goal Name (e.g., Vacation)" 
+                                            className="w-full bg-[#1b3324] text-[#e2ede3] border border-[#2a4d36] rounded-lg px-3 py-2 text-xs outline-none focus:border-[#5b8266]"
+                                        />
+                                        <input 
+                                            type="number" 
+                                            id="newGoalTarget" 
+                                            placeholder="Target Amount ($)" 
+                                            className="w-full bg-[#1b3324] text-[#e2ede3] border border-[#2a4d36] rounded-lg px-3 py-2 text-xs outline-none focus:border-[#5b8266]"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const nameInput = document.getElementById('newGoalName');
+                                                const targetInput = document.getElementById('newGoalTarget');
+                                                const name = nameInput.value.trim();
+                                                const target = parseFloat(targetInput.value);
+
+                                                if (!name || !target || target <= 0) return;
+
+                                                const newGoalObj = {
+                                                    id: Date.now(),
+                                                    name: name,
+                                                    target: target,
+                                                    current: 0
+                                                };
+
+                                                const updated = [...goals, newGoalObj];
+                                                setGoals(updated);
+                                                syncToCloud('goals', updated);
+
+                                                nameInput.value = '';
+                                                targetInput.value = '';
+                                            }}
+                                            className="w-full bg-[#31573f] hover:bg-[#427050] text-white py-2 rounded-lg text-xs font-semibold transition">
+                                            + Plant New Goal
+                                        </button>
+                                    </div>
+
+                                    {/* Goals List */}
                                     <div className="space-y-3">
-                                        {goals.map(goal => {
+                                        {goals.length > 0 ? goals.map(goal => {
                                             const pct = Math.min(Math.round((goal.current / goal.target) * 100), 100);
                                             return (
-                                                <div key={goal.id} className="bg-[#152a1d] border border-[#254631] p-3.5 rounded-xl">
-                                                    <div className="flex justify-between items-center mb-1 text-xs font-semibold">
+                                                <div key={goal.id} className="bg-[#152a1d] border border-[#254631] p-3.5 rounded-xl relative">
+                                                    
+                                                    {/* Delete Goal Button */}
+                                                    <button 
+                                                        onClick={() => {
+                                                            const updated = goals.filter(g => g.id !== goal.id);
+                                                            setGoals(updated);
+                                                            syncToCloud('goals', updated);
+                                                        }}
+                                                        className="absolute top-3 right-3 text-rose-400 hover:text-rose-300 text-xs font-bold px-2 py-1">
+                                                        ✕
+                                                    </button>
+
+                                                    <div className="flex justify-between items-center mb-1 text-xs font-semibold pr-6">
                                                         <span className="text-[#e2ede3]">{goal.name}</span>
                                                         <span className="text-[#a3c9a8]">${goal.current} /${goal.target}</span>
                                                     </div>
@@ -390,11 +446,14 @@
                                                     </button>
                                                 </div>
                                             );
-                                        })}
+                                        }) : (
+                                            <p className="text-xs text-[#7c9e7e] italic text-center py-4">No active greenhouse goals. Plant one above!</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
                         )}
+
 
                     </main>
 
