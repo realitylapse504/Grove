@@ -57,22 +57,24 @@
             const [incomes, setIncomes] = React.useState([]);
             const [syncStatus, setSyncStatus] = React.useState('Syncing...');
 
-            // Realtime Sync Listener
+                        // Realtime Sync Listener
             React.useEffect(() => {
                 VAULT_REF.on('value', (snapshot) => {
                     const data = snapshot.val();
                     if (data) {
                         if (data.transactions) setTransactions(Object.values(data.transactions));
-                        if (data.goals) setGoals(Object.values(data.goals));
+                        // This line explicitly forces it to read whatever is in Firebase, even if it's empty
+                        setGoals(data.goals ? Object.values(data.goals) : []);
                         if (data.budgets) setBudgets(data.budgets);
                         if (data.incomes) setIncomes(Object.values(data.incomes));
+                    } else {
+                        setGoals([]);
                     }
                     setSyncStatus('Connected 🌱');
                 }, (error) => {
                     setSyncStatus('Sync Error ⚠️');
                 });
             }, []);
-
             const syncToCloud = (path, data) => {
                 db.ref(`grove_vault_1102/${path}`).set(data);
             };
