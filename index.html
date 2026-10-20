@@ -77,6 +77,7 @@
         function App() {
             const [tab, setTab] = React.useState('keypad');
             const [amount, setAmount] = React.useState('0');
+            const [note, setNote] = React.useState('');
             const [who, setWho] = React.useState('Marquis');
             const [entryDate, setEntryDate] = React.useState(getTodayInput());
             const [isRecurring, setIsRecurring] = React.useState(false);
@@ -135,6 +136,7 @@
                     id: Date.now(),
                     amount: num,
                     category: catId,
+                    note: note.trim(),
                     who,
                     date: toSafeISO(entryDate),
                     isRecurring,
@@ -146,6 +148,7 @@
                 setTransactions(updated);
                 syncToCloud('transactions', updated);
                 setAmount('0');
+                setNote('');
                 setIsRecurring(false);
                 setEntryDate(getTodayInput());
             };
@@ -157,6 +160,7 @@
                 const newInc = {
                     id: Date.now(),
                     amount: num,
+                    note: note.trim(),
                     who,
                     date: toSafeISO(entryDate),
                     isRecurring,
@@ -168,6 +172,7 @@
                 setIncomes(updated);
                 syncToCloud('incomes', updated);
                 setAmount('0');
+                setNote('');
                 setIsRecurring(false);
                 setEntryDate(getTodayInput());
             };
@@ -194,6 +199,22 @@
                     syncToCloud('incomes', updated);
                 } else {
                     const updated = transactions.map(tx => tx.id === id ? { ...tx, date: updatedISO } : tx);
+                    setTransactions(updated);
+                    syncToCloud('transactions', updated);
+                }
+            };
+
+            // Edit Name/Note of Any Existing Expense or Income
+            const handleUpdateItemNote = (id, currentNote, isIncomeItem = false) => {
+                const updatedNote = prompt("Enter a name or note for this entry (e.g., Netflix, Electric Bill):", currentNote || "");
+                if (updatedNote === null) return; // Cancelled
+                const cleanNote = updatedNote.trim();
+                if (isIncomeItem) {
+                    const updated = incomes.map(inc => inc.id === id ? { ...inc, note: cleanNote } : inc);
+                    setIncomes(updated);
+                    syncToCloud('incomes', updated);
+                } else {
+                    const updated = transactions.map(tx => tx.id === id ? { ...tx, note: cleanNote } : tx);
                     setTransactions(updated);
                     syncToCloud('transactions', updated);
                 }
@@ -269,7 +290,7 @@
                         
                         {/* TAB 1: KEYPAD */}
                         {tab === 'keypad' && (
-                            <div className="space-y-3.5">
+                            <div className="space-y-3">
                                 <div className="flex bg-[#1a3323] p-1 rounded-xl border border-[#2a4d36] text-sm">
                                     <button 
                                         onClick={() => setWho('Marquis')} 
@@ -317,10 +338,29 @@
                                     </div>
                                 </div>
 
-                                <div className="bg-[#172e20] border border-[#294c35] rounded-2xl p-4 text-center">
-                                    <span className="text-xs text-[#7c9e7e] uppercase tracking-widest block mb-1">Entry Amount</span>
-                                    <div className="text-4xl font-extrabold text-[#e2ede3] tracking-tight">
-                                        ${amount}
+                                {/* Entry Amount & Item Label Box */}
+                                <div className="bg-[#172e20] border border-[#294c35] rounded-2xl p-3.5 text-center space-y-2.5">
+                                    <div>
+                                        <span className="text-xs text-[#7c9e7e] uppercase tracking-widest block mb-0.5">Entry Amount</span>
+                                        <div className="text-4xl font-extrabold text-[#e2ede3] tracking-tight">
+                                            ${amount}
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <input 
+                                            type="text"
+                                            value={note}
+                                            onChange={(e) => setNote(e.target.value)}
+                                            placeholder="🏷️ Label bill, sub, or item (e.g., Netflix, Electric)..."
+                                            className="w-full bg-[#122419] text-[#e2ede3] placeholder-[#68876b] border border-[#254631] rounded-xl px-3 py-2 text-xs outline-none focus:border-[#5b8266]"
+                                        />
+                                        {note && (
+                                            <button 
+                                                onClick={() => setNote('')}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#7c9e7e] hover:text-[#e2ede3] text-xs font-bold px-1">
+                                                ✕
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -411,18 +451,27 @@
                             <div className="space-y-4">
                                 <div className="bg-[#183021] border border-[#284a34] rounded-2xl p-4">
                                     <h2 className="text-sm font-semibold text-[#a3c9a8] mb-1">📅 Cash Flow & Pending Schedule</h2>
-                                    <p className="text-[11px] text-[#7c9e7e] mb-3">Tap any item's date box to change when it happened or when it's due.</p>
+                                    <p className="text-[11px] text-[#7c9e7e] mb-3">Tap any title (✏️) to rename it, or tap a date box to reschedule.</p>
                                     
                                     {pendingItems.length > 0 ? (
                                         <div className="space-y-2 mb-5">
                                             <p className="text-xs text-[#8ca88e] font-medium">Pending Recurring Items:</p>
                                             {pendingItems.map(item => (
                                                 <div key={item.id} className="bg-[#1f3c29] p-3 rounded-xl border border-[#355c42] flex justify-between items-center text-xs">
-                                                    <div className="space-y-1">
-                                                        <p className="font-bold text-[#e2ede3]">
-                                                            {item.isIncome ? '💰 Income' : item.category?.toUpperCase()} — ${item.amount.toFixed(2)} ({item.who})
+                                                    <div className="space-y-1 pr-2">
+                                                        <button 
+                                                            onClick={() => handleUpdateItemNote(item.id, item.note, item.isIncome)}
+                                                            className="text-left font-bold text-[#e2ede3] hover:text-[#a3c9a8] flex items-center flex-wrap gap-1">
+                                                            <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-[#152a1d] text-[#a3c9a8] border border-[#2f543c]">
+                                                                {item.isIncome ? '💰 Income' : item.category}
+                                                            </span>
+                                                            <span>{item.note || 'Tap to name'}</span>
+                                                            <span className="text-[10px] text-[#7c9e7e]">✏️</span>
+                                                        </button>
+                                                        <p className="text-[11px] text-[#9ab89d]">
+                                                            <strong className="text-[#e2ede3]">${item.amount.toFixed(2)}</strong> • {item.who}
                                                         </p>
-                                                        <div className="flex items-center space-x-2">
+                                                        <div className="flex items-center space-x-2 pt-0.5">
                                                             <input 
                                                                 type="date"
                                                                 value={toInputDate(item.date)}
@@ -436,7 +485,7 @@
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center space-x-2">
+                                                    <div className="flex items-center space-x-2 shrink-0">
                                                         <button 
                                                             onClick={() => {
                                                                 if (item.isIncome) {
@@ -477,13 +526,19 @@
                                     <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                                         {completedHistory.length > 0 ? completedHistory.map(item => (
                                             <div key={item.id} className="bg-[#152a1d] p-2.5 rounded-xl border border-[#223e2c] flex justify-between items-center text-xs">
-                                                <div className="space-y-1">
-                                                    <div>
-                                                        <span className="font-bold text-[#e2ede3] uppercase tracking-wide">
+                                                <div className="space-y-1 pr-2">
+                                                    <button 
+                                                        onClick={() => handleUpdateItemNote(item.id, item.note, item.isIncome)}
+                                                        className="text-left flex items-center flex-wrap gap-1.5 group">
+                                                        <span className="font-bold text-[#a3c9a8] uppercase tracking-wide text-[10px] px-1.5 py-0.5 rounded bg-[#1b3324] border border-[#2a4d36]">
                                                             {item.isIncome ? '💰 INCOME' : item.category}
                                                         </span>
-                                                        <span className="text-[#8ca88e] ml-2">({item.who})</span>
-                                                    </div>
+                                                        <span className="font-semibold text-[#e2ede3] group-hover:underline">
+                                                            {item.note || <span className="text-[#6b8c6e] italic font-normal">Add label...</span>}
+                                                        </span>
+                                                        <span className="text-[10px] text-[#6b8c6e]">✏️</span>
+                                                        <span className="text-[#8ca88e] text-[11px]">({item.who})</span>
+                                                    </button>
                                                     <div className="flex items-center space-x-2">
                                                         <input 
                                                             type="date"
@@ -496,7 +551,7 @@
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center space-x-3">
+                                                <div className="flex items-center space-x-3 shrink-0">
                                                     <span className={`font-bold ${item.isIncome ? 'text-emerald-300' : 'text-[#a3c9a8]'}`}>
                                                         {item.isIncome ? '+' : '-'}${item.amount.toFixed(2)}
                                                     </span>
